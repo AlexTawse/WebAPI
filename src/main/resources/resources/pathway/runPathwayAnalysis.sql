@@ -91,39 +91,43 @@ into
 IF OBJECT_ID('tempdb..#split_overlapping_events', 'U') IS NOT NULL
 DROP TABLE #split_overlapping_events;
 
-SELECT
-	CASE WHEN ordinal < 3 THEN first.id ELSE second.id END as id,
-	CASE WHEN ordinal < 3 THEN first.event_cohort_index ELSE second.event_cohort_index END event_cohort_index,
-	CASE WHEN ordinal < 3 THEN first.subject_id ELSE second.subject_id END subject_id,
-
-	CASE ordinal
-		WHEN 1 THEN
-		first.cohort_start_date
-		WHEN 2 THEN
-		second.cohort_start_date
-		WHEN 3 THEN
-		second.cohort_start_date
-		WHEN 4 THEN
-		first.cohort_end_date
-		END as cohort_start_date,
-
-	CASE ordinal
-		WHEN 1 THEN
-		second.cohort_start_date
-		WHEN 2 THEN
-		first.cohort_end_date
-		WHEN 3 THEN
-		first.cohort_end_date
-		WHEN 4 THEN
-		second.cohort_end_date
-		END as cohort_end_date
+SELECT id, event_cohort_index, subject_id, cohort_start_date, cohort_end_date
 INTO #split_overlapping_events
-FROM #collapsed_dates_events first
-JOIN #collapsed_dates_events second ON first.subject_id = second.subject_id
-    AND first.cohort_start_date < second.cohort_start_date
-    AND first.cohort_end_date < second.cohort_end_date
-    AND first.cohort_end_date > second.cohort_start_date
-CROSS JOIN (SELECT 1 ordinal UNION SELECT 2 UNION SELECT 3 UNION SELECT 4) multiplier;
+FROM (
+	SELECT
+		CASE WHEN ordinal < 3 THEN first.id ELSE second.id END as id,
+		CASE WHEN ordinal < 3 THEN first.event_cohort_index ELSE second.event_cohort_index END event_cohort_index,
+		CASE WHEN ordinal < 3 THEN first.subject_id ELSE second.subject_id END subject_id,
+
+		CASE ordinal
+			WHEN 1 THEN
+			first.cohort_start_date
+			WHEN 2 THEN
+			second.cohort_start_date
+			WHEN 3 THEN
+			second.cohort_start_date
+			WHEN 4 THEN
+			first.cohort_end_date
+			END as cohort_start_date,
+
+		CASE ordinal
+			WHEN 1 THEN
+			second.cohort_start_date
+			WHEN 2 THEN
+			first.cohort_end_date
+			WHEN 3 THEN
+			first.cohort_end_date
+			WHEN 4 THEN
+			second.cohort_end_date
+			END as cohort_end_date
+
+	FROM #collapsed_dates_events first
+	JOIN #collapsed_dates_events second ON first.subject_id = second.subject_id
+			AND first.cohort_start_date < second.cohort_start_date
+			AND first.cohort_end_date < second.cohort_end_date
+			AND first.cohort_end_date > second.cohort_start_date
+	CROSS JOIN (SELECT 1 ordinal UNION SELECT 2 UNION SELECT 3 UNION SELECT 4) multiplier
+) Q;
 
 /*
 * Group fully overlapping events into combinations (e.g. two separate events A and B with same start and end dates -> single A+B event)
