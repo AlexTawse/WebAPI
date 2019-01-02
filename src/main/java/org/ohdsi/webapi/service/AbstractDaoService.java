@@ -38,6 +38,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 
 /**
@@ -68,6 +69,9 @@ public abstract class AbstractDaoService {
 
   @Autowired
   private SourceRepository sourceRepository;
+
+  @Autowired
+  private DaoDataSourceService daoDataSourceService;
 
   @Autowired 
   ConceptSetItemRepository conceptSetItemRepository;
@@ -144,22 +148,13 @@ public abstract class AbstractDaoService {
   }
 
   public JdbcTemplate getSourceJdbcTemplate(Source source) {
-
     ConnectionParams connectionParams = DataSourceDTOParser.parse(source);
     if (IMPALA_DATASOURCE.equalsIgnoreCase(source.getSourceDialect()) && AuthMethod.KERBEROS == connectionParams.getAuthMethod()) {
       loginToKerberos(source, connectionParams);
     }
-    DriverManagerDataSource dataSource;
-    if (source.getUsername() != null && source.getPassword() != null) {
-      // NOTE: jdbc link should NOT include username and password, because they have higher priority than separate ones
-      dataSource = new DriverManagerDataSource(
-              source.getSourceConnection(),
-              source.getUsername(),
-              source.getPassword()
-      );
-    } else {
-      dataSource = new DriverManagerDataSource(source.getSourceConnection());
-    }
+
+    DataSource dataSource = daoDataSourceService.dataSource(source.getSourceConnection(), source.getUsername(), source.getPassword());
+
     return new JdbcTemplate(dataSource);
   }
 

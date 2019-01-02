@@ -1,6 +1,7 @@
 package org.ohdsi.webapi;
 
 import com.cosium.spring.data.jpa.entity.graph.repository.support.EntityGraphJpaRepositoryFactoryBean;
+
 import java.sql.DriverManager;
 import java.util.Properties;
 import javax.persistence.EntityManagerFactory;
@@ -14,6 +15,7 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jasypt.encryption.pbe.PBEStringEncryptor;
 import org.jasypt.encryption.pbe.StandardPBEStringEncryptor;
 import org.jasypt.hibernate4.encryptor.HibernatePBEEncryptorRegistry;
+import org.ohdsi.webapi.service.DaoDataSourceService;
 import org.ohdsi.webapi.source.NotEncrypted;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,12 +43,18 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class DataAccessConfig {
 
     private final Log logger = LogFactory.getLog(DataAccessConfig.class);
-	
-    @Autowired
     private Environment env;
+    private DaoDataSourceService daoDataSourceService;
+
+    @Autowired
+    public DataAccessConfig(Environment env, DaoDataSourceService daoDataSourceService) {
+        this.env = env;
+        this.daoDataSourceService = daoDataSourceService;
+    }
+
     @Value("${jasypt.encryptor.enabled}")
     private boolean encryptorEnabled;
-  
+
     private Properties getJPAProperties() {
         Properties properties = new Properties();
         properties.setProperty("hibernate.default_schema", this.env.getProperty("spring.jpa.properties.hibernate.default_schema"));
@@ -54,10 +62,10 @@ public class DataAccessConfig {
         properties.setProperty("hibernate.id.new_generator_mappings", "false");
         return properties;
     }
-      
+
     @Bean
-		@DependsOn("defaultStringEncryptor")
-    @Primary    
+    @DependsOn("defaultStringEncryptor")
+    @Primary
     public DataSource primaryDataSource() {
         String driver = this.env.getRequiredProperty("datasource.driverClassName");
         String url = this.env.getRequiredProperty("datasource.url");
@@ -65,7 +73,7 @@ public class DataAccessConfig {
         String pass = this.env.getRequiredProperty("datasource.password");
         boolean autoCommit = false;
 
-				//pooling - currently issues with (at least) oracle with use of temp tables and "on commit preserve rows" instead of "on commit delete rows";
+        //pooling - currently issues with (at least) oracle with use of temp tables and "on commit preserve rows" instead of "on commit delete rows";
         //http://forums.ohdsi.org/t/transaction-vs-session-scope-for-global-temp-tables-statements/333/2
         /*final PoolConfiguration pc = new org.apache.tomcat.jdbc.pool.PoolProperties();
      pc.setDriverClassName(driver);
@@ -74,12 +82,19 @@ public class DataAccessConfig {
      pc.setPassword(pass);
      pc.setDefaultAutoCommit(autoCommit);*/
         //non-pooling
-        DriverManagerDataSource ds = new DriverManagerDataSource(url, user, pass);
-        ds.setDriverClassName(driver);
+//        DriverManagerDataSource ds = new DriverManagerDataSource(url, user, pass);
+//        ds.setDriverClassName(driver);
         //note autocommit defaults vary across vendors. use provided @Autowired TransactionTemplate
 
-        String[] supportedDrivers;
-        supportedDrivers = new String[]{"org.postgresql.Driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver", "oracle.jdbc.driver.OracleDriver", "com.amazon.redshift.jdbc.Driver", "com.cloudera.impala.jdbc41.Driver", "net.starschema.clouddb.jdbc.BQDriver", "org.netezza.Driver"};
+        String[] supportedDrivers = new String[]{
+                "org.postgresql.Driver",
+                "com.microsoft.sqlserver.jdbc.SQLServerDriver",
+                "oracle.jdbc.driver.OracleDriver",
+                "com.amazon.redshift.jdbc.Driver",
+                "com.cloudera.impala.jdbc41.Driver",
+                "net.starschema.clouddb.jdbc.BQDriver",
+                "org.netezza.Driver"
+        };
         for (String driverName : supportedDrivers) {
             try {
                 Class.forName(driverName);
@@ -88,12 +103,15 @@ public class DataAccessConfig {
                 System.out.println("error loading " + driverName + " driver.");
             }
         }
-        return ds;
+
+
+
+        return daoDataSourceService.dataSource(url, user, pass);
         //return new org.apache.tomcat.jdbc.pool.DataSource(pc);
     }
 
     @Bean
-    public PBEStringEncryptor defaultStringEncryptor(){
+    public PBEStringEncryptor defaultStringEncryptor() {
 
         PBEStringEncryptor stringEncryptor;
         if (encryptorEnabled) {
@@ -101,9 +119,9 @@ public class DataAccessConfig {
             encryptor.setProvider(new BouncyCastleProvider());
             encryptor.setProviderName("BC");
             encryptor.setAlgorithm(env.getRequiredProperty("jasypt.encryptor.algorithm"));
-						if ("PBEWithMD5AndDES".equals(env.getRequiredProperty("jasypt.encryptor.algorithm"))) {
-							logger.warn("Warning:  encryption algorithm set to PBEWithMD5AndDES, which is not considered a strong encryption algorithm.  You may use PBEWITHSHA256AND128BITAES-CBC-BC, but will require special JVM configuration to support these stronger methods.");
-						}
+            if ("PBEWithMD5AndDES".equals(env.getRequiredProperty("jasypt.encryptor.algorithm"))) {
+                logger.warn("Warning:  encryption algorithm set to PBEWithMD5AndDES, which is not considered a strong encryption algorithm.  You may use PBEWITHSHA256AND128BITAES-CBC-BC, but will require special JVM configuration to support these stronger methods.");
+            }
             encryptor.setKeyObtentionIterations(1000);
             String password = env.getRequiredProperty("jasypt.encryptor.password");
             if (StringUtils.isNotEmpty(password)) {
@@ -161,7 +179,7 @@ public class DataAccessConfig {
         transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         return transactionTemplate;
     }
-		
+
     @Bean
     public TransactionTemplate transactionTemplateNoTransaction(PlatformTransactionManager transactionManager) {
         TransactionTemplate transactionTemplate = new TransactionTemplate();
